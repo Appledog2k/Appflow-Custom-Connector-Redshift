@@ -9,7 +9,7 @@
 
   <properties>
     <aws-custom-connector-sdk.version>1.0</aws-custom-connector-sdk.version>
-    <mysql.connector.version>8.0.28</mysql.connector.version>
+    <redshift.connector.version>2.1.0.22</redshift.connector.version>
     <commons-collections4.version>4.1</commons-collections4.version>
     <aws-lambda-java-log4j2.version>1.2.0</aws-lambda-java-log4j2.version>
     <maven-shade-plugin.version>3.2.2</maven-shade-plugin.version>
@@ -26,9 +26,9 @@
       <version>${aws-custom-connector-sdk.version}</version>
     </dependency>
     <dependency>
-      <groupId>mysql</groupId>
-      <artifactId>mysql-connector-java</artifactId>
-      <version>${mysql.connector.version}</version>
+      <groupId>com.amazon.redshift</groupId>
+      <artifactId>redshift-jdbc42</artifactId>
+      <version>${redshift.connector.version}</version>
     </dependency>
     <dependency>
       <groupId>org.apache.commons</groupId>

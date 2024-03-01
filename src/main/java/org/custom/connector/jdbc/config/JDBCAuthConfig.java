@@ -23,7 +23,7 @@ public class JDBCAuthConfig implements CustomAuthConfig {
       .key("driver")
       .label("Driver")
       .description("Database driver")
-      .addConnectorSuppliedValues("mysql")
+      .addConnectorSuppliedValues("redshift")
       .required(true)
       .sensitiveField(false)
       .build();

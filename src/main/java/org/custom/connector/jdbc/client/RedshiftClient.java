@@ -30,19 +30,21 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
-public final class MySQLClient implements JDBCClient {
-  private static final Logger LOGGER = LoggerFactory.getLogger(MySQLClient.class);
+public final class RedshiftClient implements JDBCClient {
+  private static final Logger LOGGER = LoggerFactory.getLogger(RedshiftClient.class);
   final ObjectMapper objectMapper = new ObjectMapper();
   private Connection conn = null;
   private final Map<String, String> credentials;
 
-  public MySQLClient(final Map<String, String> creds) {
+  public RedshiftClient(final Map<String, String> creds) {
     credentials = creds;
   }
 
@@ -77,23 +79,22 @@ public final class MySQLClient implements JDBCClient {
     conn.close();
     return records;
   }
-
+// Đối chiếu lại phần xét khóa chính của redshift
   @Override
   public List<FieldDefinition> getFieldDefinitions(final DescribeEntityRequest request) throws SQLException {
     final List<FieldDefinition> fieldDefinitions = new ArrayList<>();
     Connection conn = getConnection();
 
     Statement st = conn.createStatement();
-    String sql = String.format("DESCRIBE `%s`", request.entityIdentifier());
+    String sql = String.format("SELECT * FROM pg_table_def WHERE tablename = '%s'", request.entityIdentifier());
     ResultSet rs = st.executeQuery(sql);
 
     while (rs.next()) {
       fieldDefinitions.add(ImmutableFieldDefinition.builder()
-        .fieldName(rs.getString(1))
-        .dataType(mapFieldType(rs.getString(2)))
-        .dataTypeLabel(rs.getString(1))
-        .label(rs.getString(1))
-        .isPrimaryKey(rs.getString(4).equals("PRI"))
+        .fieldName(rs.getString(3))
+        .dataType(mapFieldType(rs.getString(4)))
+        .dataTypeLabel(rs.getString(3))
+        .label(rs.getString(3))
         .readProperties(ImmutableReadOperationProperty.builder()
           .isQueryable(true)
           .isRetrievable(true)
@@ -102,7 +103,6 @@ public final class MySQLClient implements JDBCClient {
           .isNullable(true)
           .isUpdatable(true)
           .isCreatable(true)
-          .isDefaultedOnCreate(!rs.getString(4).equals("PRI"))
           .supportedWriteOperations(getWriteOperations())
           .build())
         .build());
@@ -143,79 +143,47 @@ public final class MySQLClient implements JDBCClient {
     return conn;
   }
 
-  private FieldDataType mapFieldType(final String mysqlType) {
-    String[] temp = mysqlType.split("\\(");
+  private FieldDataType mapFieldType(final String redshiftType) {
+    String[] temp = redshiftType.split("\\(");
     String mtype = temp[0].toUpperCase();
     switch (mtype) {
-      case "ARRAY":
-      case "STRUCT":
-        return FieldDataType.Struct;
-      case "BIGINT":
-      case "NUMERIC":
-        return FieldDataType.BigInteger;
-      case "BINARY":
-      case "LONGVARBINARY":
-      case "VARBINARY":
-        return FieldDataType.ByteArray;
-      case "BIT":
       case "SMALLINT":
+      case "BIGINT":
+      case "DECIMAL":
+      case "NUMERIC":
+      case "REAL":
+      case "DOUBLE PRECISION":
+      case "FLOAT8":
+      case "FLOAT4":
       case "INTEGER":
-      case "TINYINT":
-      case "MEDIUMINT":
+        return FieldDataType.Integer;
       case "INT":
         return FieldDataType.Integer;
-      case "BLOB":
-        return FieldDataType.String;
-      case "BOOLEAN":
-        return FieldDataType.Boolean;
+      case "INT2":
+      case "INT4":
       case "CHAR":
-        return FieldDataType.String;
-      case "CLOB":
-        return FieldDataType.String;
-      case "DATALINK":
-        return FieldDataType.String;
+      case "VARCHAR":
+      case "CHARACTER":
+      case "NCHAR":
+      case "CHARACTER VARYING":
+      case "NVARCHAR":
+      case "BPCHAR":
+      case "TEXT":
       case "DATE":
         return FieldDataType.Date;
-      case "DECIMAL":
-      case "DOUBLE":
-        return FieldDataType.Double;
-      case "DISTINCT":
-        return FieldDataType.String;
-      case "FLOAT":
-        return FieldDataType.Float;
-      case "JAVA_OBJECT":
-        return FieldDataType.Map;
-      case "LONGNVARCHAR":
-        return FieldDataType.String;
-      case "LONGVARCHAR":
-        return FieldDataType.String;
-      case "NCHAR":
-        return FieldDataType.String;
-      case "NCLOB":
-        return FieldDataType.String;
-      case "NULL":
-        return FieldDataType.String;
-      case "NVARCHAR":
-        return FieldDataType.String;
-      case "OTHER":
-        return FieldDataType.String;
-      case "REAL":
-        return FieldDataType.Long;
-      case "REF":
-        return FieldDataType.String;
-      case "REF_CURSOR":
-        return FieldDataType.String;
-      case "ROWID":
-        return FieldDataType.String;
-      case "SQLXML":
-        return FieldDataType.String;
       case "TIME":
-      case "TIME_WITH_TIMEZONE":
+      case "TIMETZ":
       case "TIMESTAMP":
-      case "TIMESTAMP_WITH_TIMEZONE":
-        return FieldDataType.DateTime;
-      case "VARCHAR":
-        return FieldDataType.String;
+      case "TIMESTAMPTZ":
+      case "INTERVAL YEAR TO MONTH":
+      case "INTERVAL DAY TO SECOND":
+      case "BOOLEAN":
+        return FieldDataType.Boolean;
+      case "HLLSKETCH":
+      case "SUPER":
+      case "VARBYTE":
+      case "GEOMETRY":
+      case "GEOGRAPHY":
       default:
         return FieldDataType.String;
     }
@@ -226,7 +194,7 @@ public final class MySQLClient implements JDBCClient {
     try (Connection conn = getConnection()) {
       Statement st = conn.createStatement();
 
-      String sql = String.format("SELECT COUNT(*) as cnt FROM `%s`", request.entityIdentifier());
+      String sql = String.format("SELECT COUNT(*) as cnt FROM %s", request.entityIdentifier());
       if (request.filterExpression() != null) {
         sql = sql + String.format(" WHERE %s", request.filterExpression());
       }
@@ -238,15 +206,16 @@ public final class MySQLClient implements JDBCClient {
       conn.close();
       return count;
     } catch (SQLException ex) {
-      LOGGER.error("SQLException information");
+      LOGGER.error("SQLException information - Error in getTotalData method - Hungnq log");
       while (ex != null) {
-        LOGGER.error("Error msg: " + ex.getMessage());
+        LOGGER.error("HungnqError msg: " + ex.getMessage());
         ex = ex.getNextException();
       }
-      throw new RuntimeException("Error");
+      throw new RuntimeException("Error-Hungnq");
     }
   }
 
+  // Xem lại điều kiện lọc lấy dữ liệu
   @Override
   public List<String> queryData(final QueryDataRequest request) {
     List<String> records = new ArrayList<String>();
@@ -254,21 +223,29 @@ public final class MySQLClient implements JDBCClient {
     try (Connection conn = getConnection()) {
 
       Statement st = conn.createStatement();
+
+      List<String> fieldNamesList = request.selectedFieldNames();
+      // Chuyển danh sách thành mảng
+      String[] fieldNamesArray = fieldNamesList.toArray(new String[0]);
+      String output = Arrays.stream(fieldNamesArray)
+                     .map(fieldName -> "\"" + fieldName + "\"")
+                     .collect(Collectors.joining(","));
+
       String sql = String.format(
-        "SELECT %s FROM `%s`", String.join(",", request.selectedFieldNames()), request.entityIdentifier()
+        "SELECT * FROM %s", request.entityIdentifier()
       );
 
-      if (request.filterExpression() != null) {
-        sql = sql + String.format(" WHERE %s", request.filterExpression());
-      }
+      // if (request.filterExpression() != null) {
+      //   sql = sql + String.format(" WHERE %s", request.filterExpression());
+      // }
 
-      if (request.maxResults() != null) {
-        int nextToken = 0;
-        if (request.nextToken() != null) {
-          nextToken = Integer.parseInt(request.nextToken());
-        }
-        sql = sql + String.format(" LIMIT %s, %s", nextToken, request.maxResults());
-      }
+      // if (request.maxResults() != null) {
+      //   int nextToken = 0;
+      //   if (request.nextToken() != null) {
+      //     nextToken = Integer.parseInt(request.nextToken());
+      //   }
+      //   sql = sql + String.format(" LIMIT %s, %s", nextToken, request.maxResults());
+      // }
 
       ResultSet rs = st.executeQuery(sql);
       Map<String, String> rows = new HashMap<>();
@@ -301,7 +278,7 @@ public final class MySQLClient implements JDBCClient {
     JsonNode recordJson;
 
     try (Connection conn = getConnection()) {
-      conn.setAutoCommit(true);
+      // conn.setAutoCommit(true);
       Statement statement = conn.createStatement();
 
       String sql;
@@ -324,7 +301,9 @@ public final class MySQLClient implements JDBCClient {
             sql = "INSERT";
           }
 
-          sql += String.format(" INTO `%s` (%s) VALUES (", request.entityIdentifier(), String.join(",", keys));
+          // sql += String.format(" INTO %s (%s) VALUES (", request.entityIdentifier(), String.join(",", keys));
+          sql += String.format(" INTO %s VALUES (", request.entityIdentifier());
+
           String value;
 
           for (int i = 0; i < keys.size(); i++) {
@@ -344,7 +323,7 @@ public final class MySQLClient implements JDBCClient {
           String recordIdKey = request.idFieldNames().get(0);
           String recordId = getValueFromRecord(recordJson, recordIdKey);
           String value;
-          sql = String.format("UPDATE `%s` SET ", request.entityIdentifier());
+          sql = String.format("UPDATE %s SET ", request.entityIdentifier());
           for (int i = 0; i < keys.size(); i++) {
             value = StringEscapeUtils.escapeJava(getValueFromRecord(recordJson, keys.get(i)));
 
