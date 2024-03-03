@@ -57,6 +57,7 @@ public final class RedshiftClient implements JDBCClient {
     return writeOperationTypes;
   }
 
+  // Done - Function GetEntities
   @Override
   public List<Entity> getEntities(final ListEntitiesRequest request) throws SQLException {
     final List<Entity> records = new ArrayList<Entity>();
@@ -64,22 +65,24 @@ public final class RedshiftClient implements JDBCClient {
     Connection conn = getConnection();
 
     DatabaseMetaData metaData = conn.getMetaData();
-    String[] types = {"TABLE"};
+    String[] types = { "TABLE" };
     // Retrieving the columns in the database
     ResultSet tables = metaData.getTables(null, null, "%", types);
     while (tables.next()) {
       records.add(
-        ImmutableEntity.builder()
-          .entityIdentifier(tables.getString("TABLE_NAME"))
-          .description(tables.getString("TABLE_NAME"))
-          .label(tables.getString("TABLE_NAME"))
-          .hasNestedEntities(false)
-          .build());
+          ImmutableEntity.builder()
+              .entityIdentifier(tables.getString("TABLE_NAME"))
+              .description(tables.getString("TABLE_NAME"))
+              .label(tables.getString("TABLE_NAME"))
+              .hasNestedEntities(false) // A boolean indicating whether the entity has nested or child entities
+                                        // associated with it.
+              .build());
     }
     conn.close();
     return records;
   }
-// Đối chiếu lại phần xét khóa chính của redshift
+
+  // Xem lại phần khóa chính Redshift
   @Override
   public List<FieldDefinition> getFieldDefinitions(final DescribeEntityRequest request) throws SQLException {
     final List<FieldDefinition> fieldDefinitions = new ArrayList<>();
@@ -91,27 +94,28 @@ public final class RedshiftClient implements JDBCClient {
 
     while (rs.next()) {
       fieldDefinitions.add(ImmutableFieldDefinition.builder()
-        .fieldName(rs.getString(3))
-        .dataType(mapFieldType(rs.getString(4)))
-        .dataTypeLabel(rs.getString(3))
-        .label(rs.getString(3))
-        .readProperties(ImmutableReadOperationProperty.builder()
-          .isQueryable(true)
-          .isRetrievable(true)
-          .build())
-        .writeProperties(ImmutableWriteOperationProperty.builder()
-          .isNullable(true)
-          .isUpdatable(true)
-          .isCreatable(true)
-          .supportedWriteOperations(getWriteOperations())
-          .build())
-        .build());
+          .fieldName(rs.getString(3))
+          .dataType(mapFieldType(rs.getString(4)))
+          .dataTypeLabel(rs.getString(3))
+          .label(rs.getString(3))
+          .readProperties(ImmutableReadOperationProperty.builder()
+              .isQueryable(true)
+              .isRetrievable(true)
+              .build())
+          .writeProperties(ImmutableWriteOperationProperty.builder()
+              .isNullable(true)
+              .isUpdatable(true)
+              .isCreatable(true)
+              .supportedWriteOperations(getWriteOperations())
+              .build())
+          .build());
     }
     rs.close();
     conn.close();
     return fieldDefinitions;
   }
 
+  // Done - Function Get Connection
   @Override
   public Connection getConnection() {
     try {
@@ -124,17 +128,17 @@ public final class RedshiftClient implements JDBCClient {
 
     try {
       String uri = String.format(
-        "jdbc:%s://%s:%s/%s?user=%s&password=%s",
-        credentials.get("driver"),
-        credentials.get("hostname"),
-        credentials.get("port"),
-        credentials.get("database"),
-        credentials.get("username"),
-        credentials.get("password")
-      );
+          "jdbc:%s://%s:%s/%s?user=%s&password=%s",
+          credentials.get("driver"),
+          credentials.get("hostname"),
+          credentials.get("port"),
+          credentials.get("database"),
+          credentials.get("username"),
+          credentials.get("password"));
 
       conn = DriverManager.getConnection(uri);
     } catch (SQLException ex) {
+      LOGGER.error("Develop DFT Log Connection");
       // handle any errors
       LOGGER.error("SQLException: " + ex.getMessage());
       LOGGER.error("SQLState: " + ex.getSQLState());
@@ -143,6 +147,7 @@ public final class RedshiftClient implements JDBCClient {
     return conn;
   }
 
+  // Xem lại phần các trường này
   private FieldDataType mapFieldType(final String redshiftType) {
     String[] temp = redshiftType.split("\\(");
     String mtype = temp[0].toUpperCase();
@@ -169,6 +174,7 @@ public final class RedshiftClient implements JDBCClient {
       case "NVARCHAR":
       case "BPCHAR":
       case "TEXT":
+        return FieldDataType.String;
       case "DATE":
         return FieldDataType.Date;
       case "TIME":
@@ -180,15 +186,19 @@ public final class RedshiftClient implements JDBCClient {
       case "BOOLEAN":
         return FieldDataType.Boolean;
       case "HLLSKETCH":
+        return FieldDataType.String;
       case "SUPER":
       case "VARBYTE":
       case "GEOMETRY":
+        return FieldDataType.String;
       case "GEOGRAPHY":
+        return FieldDataType.String;
       default:
         return FieldDataType.String;
     }
   }
 
+  // Done - Function GetTotalData
   @Override
   public long getTotalData(final QueryDataRequest request) {
     try (Connection conn = getConnection()) {
@@ -206,12 +216,12 @@ public final class RedshiftClient implements JDBCClient {
       conn.close();
       return count;
     } catch (SQLException ex) {
-      LOGGER.error("SQLException information - Error in getTotalData method - Hungnq log");
+      LOGGER.error("SQLException information - DFT Develop Log");
       while (ex != null) {
-        LOGGER.error("HungnqError msg: " + ex.getMessage());
+        LOGGER.error("DFT Develop Log msg: " + ex.getMessage());
         ex = ex.getNextException();
       }
-      throw new RuntimeException("Error-Hungnq");
+      throw new RuntimeException("Error - DFT Develop Log");
     }
   }
 
@@ -225,27 +235,25 @@ public final class RedshiftClient implements JDBCClient {
       Statement st = conn.createStatement();
 
       List<String> fieldNamesList = request.selectedFieldNames();
-      // Chuyển danh sách thành mảng
       String[] fieldNamesArray = fieldNamesList.toArray(new String[0]);
       String output = Arrays.stream(fieldNamesArray)
-                     .map(fieldName -> "\"" + fieldName + "\"")
-                     .collect(Collectors.joining(","));
+          .map(fieldName -> "\"" + fieldName + "\"")
+          .collect(Collectors.joining(","));
 
       String sql = String.format(
-        "SELECT * FROM %s", request.entityIdentifier()
-      );
+          "SELECT %s FROM %s", output, request.entityIdentifier());
 
-      // if (request.filterExpression() != null) {
-      //   sql = sql + String.format(" WHERE %s", request.filterExpression());
-      // }
+      if (request.filterExpression() != null) {
+        sql = sql + String.format(" WHERE %s", request.filterExpression());
+      }
 
-      // if (request.maxResults() != null) {
-      //   int nextToken = 0;
-      //   if (request.nextToken() != null) {
-      //     nextToken = Integer.parseInt(request.nextToken());
-      //   }
-      //   sql = sql + String.format(" LIMIT %s, %s", nextToken, request.maxResults());
-      // }
+      if (request.maxResults() != null) {
+        int nextToken = 0;
+        if (request.nextToken() != null) {
+          nextToken = Integer.parseInt(request.nextToken());
+        }
+        sql = sql + String.format(" OFFSET %s LIMIT %s", nextToken, request.maxResults());
+      }
 
       ResultSet rs = st.executeQuery(sql);
       Map<String, String> rows = new HashMap<>();
@@ -263,6 +271,7 @@ public final class RedshiftClient implements JDBCClient {
       }
       rs.close();
     } catch (SQLException ex) {
+      LOGGER.error("Query Data Error - DFT Log");
       LOGGER.error("SQLException information");
       while (ex != null) {
         LOGGER.error("Error msg: " + ex.getMessage());
@@ -285,24 +294,29 @@ public final class RedshiftClient implements JDBCClient {
 
       for (String record : request.records()) {
         sql = "";
-        try {
+        try 
+        {
           recordJson = objectMapper.readValue(record, JsonNode.class);
-        } catch (JsonProcessingException e) {
+        } 
+        catch (JsonProcessingException e) 
+        {
           throw new IllegalArgumentException("Invalid record provided for Write operation. Record must be valid JSON", e);
         }
         List<String> keys = new ArrayList<>();
         Iterator<String> iterator = recordJson.fieldNames();
         iterator.forEachRemaining(e -> keys.add(e));
 
-        if (WriteOperationType.INSERT.equals(request.operation()) || WriteOperationType.UPSERT.equals(request.operation())) {
+        if (WriteOperationType.INSERT.equals(request.operation()) || WriteOperationType.UPSERT.equals(request.operation())) 
+        {
           if (WriteOperationType.UPSERT.equals(request.operation())) {
             sql = "REPLACE";
           } else {
             sql = "INSERT";
           }
 
-          // sql += String.format(" INTO %s (%s) VALUES (", request.entityIdentifier(), String.join(",", keys));
-          sql += String.format(" INTO %s VALUES (", request.entityIdentifier());
+          // sql += String.format(" INTO %s (%s) VALUES (", request.entityIdentifier(),
+          // String.join(",", keys));
+          sql += String.format(" INTO %s (%s) VALUES (", request.entityIdentifier(), String.join(",", keys));
 
           String value;
 

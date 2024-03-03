@@ -24,7 +24,7 @@ import org.slf4j.LoggerFactory;
 import java.sql.Connection;
 
 public class JDBCConnectorConfigurationHandler implements ConfigurationHandler {
-  private static final String CONNECTOR_OWNER = "ksharlandjiev";
+  private static final String CONNECTOR_OWNER = "DFTDevelop";
   private static final String CONNECTOR_NAME = "JDBCConnector";
   private static final String CONNECTOR_VERSION = "1.0";
   private static final Logger LOGGER = LoggerFactory.getLogger(JDBCConnectorConfigurationHandler.class);
